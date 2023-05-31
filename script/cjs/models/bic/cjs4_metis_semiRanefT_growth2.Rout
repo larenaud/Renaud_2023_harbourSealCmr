@@ -1,0 +1,449 @@
+
+R version 4.0.2 (2020-06-22) -- "Taking Off Again"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R est un logiciel libre livré sans AUCUNE GARANTIE.
+Vous pouvez le redistribuer sous certaines conditions.
+Tapez 'license()' ou 'licence()' pour plus de détails.
+
+R est un projet collaboratif avec de nombreux contributeurs.
+Tapez 'contributors()' pour plus d'information et
+'citation()' pour la façon de le citer dans les publications.
+
+Tapez 'demo()' pour des démonstrations, 'help()' pour l'aide
+en ligne ou 'help.start()' pour obtenir l'aide au format HTML.
+Tapez 'q()' pour quitter R.
+
+> # script for estimating preweaning survival in harbour seal using a cjs model # code adapted from Kéry and Schaub 2012.
+> # this is NOT equivalent to superpop 4.
+> # model fitting a daily survival variation and constant p (mean.p)
+> 
+> library(dplyr)
+
+Attachement du package : ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+> library(magrittr)
+> library(nimble)
+nimble version 0.12.1 is loaded.
+For more information on NIMBLE and a User Manual,
+please visit https://R-nimble.org.
+
+Attachement du package : ‘nimble’
+
+The following object is masked from ‘package:stats’:
+
+    simulate
+
+> library(coda)
+> library(boot)
+
+Attachement du package : ‘boot’
+
+The following object is masked from ‘package:nimble’:
+
+    logit
+
+> 
+> # mydat for all yrs -------------------------------------------------------
+> load("~/projects/def-pelleti2/renl2702/phoques/2022-12-05_dataCJS_pup35.RData")
+> 
+> # nimble model
+> cjs2 <- nimbleCode({
++ 
++     # add linear growth curve
++     for (j in 1:Nw) {
++         # nb lines mass 1998
++         wt.hat[j] <- 8 + beta.wt * (julianDay[j] - bDate[nimbleID[j]]) # Dubé 2003 - 10 kg at birth # changed to 8 since 10 occurred before first bd
++         mass[j] ~ dnorm(wt.hat[j], sd = sd.mass)
++     }
++     for (i in 1:nind) {
++         bDate[i] ~ T(dnorm(mu.bd, sd = sd.bd), min.bd, first.bd[i]) # truncated distn between minimal bdate and first entry
++     }
++ 
++     # Priors and constraints
++     for (i in 1:nind) { # individuals
++         for (t in f[i]:(n.occasions - 1)) {
++                 logit(phi[i,t]) <- mean.phi +
++                 sbw*weaned[i,t] +
++                 ranef.t[OccuN[t]] # added OccuN before [t] for daily surv variation
++         }
++ 
++         for(t in 1:nrealOcc){
++             logit(p[i, realOcc[t]]) <- mean.p + weaned[i, t] * betaWeaned
++         }
++ 
++         for(t in 1:nfakeOcc){ # including dummy 0 between real capture occasions - even spaced out
++             p[i, fakeOcc[t]] <- 0
++         }
++ 
++         for (t in 1:n.occasions) {
++             weaned[i, t] <- (captureJJ[t] - bDate[i]) > weanedAge # age # vector of 10 dates # weanedAge=constant, specified below
++         } #t
++        # ranef.id[i]~ dnorm(0, sd=sd.ip) # individual heterogeneity
++     } #i
++     
++     # for(t in 1:nrealOcc){
++     #     beta[t]~dlogis(0,1)
++     # }
++     
++     for(t in 1:(nrealOcc-1)){
++         ranef.t[t]~ dnorm(0, sd=sd.yr)  # priors for time-spec. recapture # added here with addition of OccuN instead of l. 55
++     }
++ 
++     betaWeaned ~ dnorm(0, 0.001)
++     mean.phi ~dlogis(0, 1)# Prior for mean survival
++     mean.p ~ dlogis(0, 1) # Prior for mean capture # changed to logis since changed to logit p...
++     sbw ~ dnorm(0, 0.001)
++     sd.yr~ dunif(0, 5)
++   #  sd.ip~ dunif(0, 5)
++ 
++ 
++     #int.wt ~ dnorm(0,0.001) # à mettre + informatif
++     beta.wt ~ dnorm(0.5, 0.001)
++     mu.bd ~ dnorm(130, 0.001) # increased precision since was too low and underestimated bd
++     sd.mass ~ dunif(0, 10)
++     sd.bd ~ dunif(1, 20)
++ 
++     # Likelihood
++     for (i in 1:nind) {
++         # Define latent state at first capture
++         z[i, f[i]] <- 1
++         for (t in (f[i] + 1):n.occasions) {
++         # for (t in (f[i] + 1):(bDate[i]+weanedAge-firstOcc+1)){   # potential alternative to really truncate after weaning, but beta.weaned and sbw will not longuer be identifiaable
++ 
++             # State process
++             z[i, t] ~ dbern(mu1[i, t])
++             mu1[i, t] <- phi[i, t - 1] * z[i, t - 1]
++             # Observation process
++             y[i, t] ~ dbern(mu2[i, t])
++             mu2[i, t] <- p[i, t] * z[i, t]
++         } #t
++     } #i
++ 
++     # derived survival from unequal occasions
++     logit(dailySurv) <- mean.phi # so daily surv takes the average surv not the random time variation
++     weanSurv <- dailySurv^weanedAge
++ })
+> 
+> 
+> # Bundle data -loop over all years, independantly
+> dflist<-list()
+> outlist <- list()
+> for(i in 1:16){ # treat each year separately
++     now=as.character(years[i])
++     captureJJ = unique(metisData35_l[[now]]$julianDay)
++     allJJ <- seq(min(captureJJ),max(captureJJ))
++     ch_dum <- matrix(0,nrow = nrow(list_ch_metis[[now]]),ncol = length(allJJ))
++     tmp <- match(captureJJ, allJJ)
++     for(i2 in 1:length(tmp)){
++         ch_dum[,tmp[i2]] <- list_ch_metis[[now]][,i2]
++     }
++     rownames(ch_dum) <- rownames(list_ch_metis[[now]])
++     get.first <- function(x)    min(which(x != 0))
++ 
++     dflist[[i]]<-list(
++         data=list(y=as.matrix(ch_dum),
++                   mass=metisData35_l[[now]]$mass),
++         const=list()
++     )
++     dflist[[i]]$const <- list(f=apply(dflist[[i]]$data$y, 1,function(x) get.first(x)),
++                               nind = nrow(dflist[[i]]$data$y),
++                               n.occasions = ncol(dflist[[i]]$data$y),
++                               captureJJ = allJJ,firstOcc=min(allJJ),
++                               Nw =  nrow(metisData35_l[[now]]),
++                               weanedAge = 30,
++                               julianDay=metisData35_l[[now]]$julianDay,
++                               nimbleID = metisData35_l[[now]]$nimbleID,
++                               first.bd=NA,
++                               fakeOcc=which(colSums(dflist[[i]]$data$y)==0),
++                               realOcc=which(colSums(dflist[[i]]$data$y)>0),
++                               min.bd=100 
++     )
++     
++     dflist[[i]]$const$OccuN=rep(1:(length(dflist[[i]]$const$realOcc)),c(diff(dflist[[i]]$const$realOcc),1))# added by gab to 'force' model to ignore order of daily surv multiplication between occasions
++     tmptmp=  metisData35_l[[i]] %>% group_by(myID) %>% summarise(min.bd = min(julianDay)) # pull vector of minimal dates for existing ID - their entry date
++     tmptmp=  tmptmp$min.bd[match(rownames(dflist[[i]]$data$y),tmptmp$myID)]
++     dflist[[i]]$const$first.bd <- ifelse(is.na(tmptmp),max(unique(metisData35_l[[i]]$julianDay)),tmptmp)
++     dflist[[i]]$const$nfakeOcc=length(dflist[[i]]$const$fakeOcc)
++     dflist[[i]]$const$nrealOcc=length(dflist[[i]]$const$realOcc)
++ 
++     names(dflist)[[i]]=now
++ 
++ 
++ known.state.cjs <- function(ch) {
++     state <- ch
++     for (i in 1:dim(ch)[1]) {
++         n1 <- min(which(ch[i, ] == 1))
++         n2 <- max(which(ch[i, ] == 1))
++         state[i, 1:n2] <- 1 # added 1 but still NAs in Z
++         state[i, n1] <- NA
++     }
++     state[state == 0] <- NA
++     return(state)
++ }
++ 
++ inits <- function() {
++     list(
++         mean.phi = rnorm(1, 5, 1),
++         mean.p = runif(1, -1, 0.5),
++         z = known.state.cjs(dflist[[i]]$data$y),
++         #beta = runif(constants$n.occasions,0,1),
++         bDate=sample(138:142,size = nrow(dflist[[i]]$data$y),replace = T),
++         sd.bd=runif(1,1,2),
++         sd.mass=runif(1,0,1),
++         mu.bd=round(rnorm(1,140,sd = 2)),
++         # wt.hat=ifelse(is.na(dflist[[i]]$data$mass),rnorm(dflist[[i]]$const$Nw,16,1),1),
++         beta.wt=rnorm(1,0.6,0.02),
++         betaWeaned = runif(1, 0, 1)
++     )
++ }
++ # parameters monitored
++ parameters <-
++     c(
++         "mean.p",
++         "mean.phi",
++         "z",
++         "betaWeaned",
++         "beta.wt",
++         "bDate",
++         "mu.bd",
++         "sd.bd",
++         "sd.mass",
++         "weanSurv",
++         "ranef.t",
++         'dailySurv'
++         # "delta.occ",
++         # "phi"
++     ) # added w and z to WAIC - here z is shitty
++ 
++ newOut <- nimbleMCMC(
++     code = cjs2,
++     constants = dflist[[i]]$const,
++     data = dflist[[i]]$data,
++     inits = inits(),
++     monitors = parameters,
++     nchains = 3,
++     niter = 2000000, thin = 1600,nburnin = 400000,
++     WAIC=TRUE,
++     summary = TRUE,
++     samplesAsCodaMCMC = TRUE
++ )
++ 
++ # newOut$samples <- lapply(newOut$samples,function(x) x[,!grepl('z',colnames(x))])
++ 
++ # rm(newOut,data)
++ outlist[[i]] <- newOut
++ print('done with:')
++ print(i)
++ }
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, logProb_z, z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 1
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, logProb_z, z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 2
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, logProb_z, z, mu2, logProb_y.
+Infinite values were detected in model variable: logProb_bDate.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+warning: problem initializing stochastic node bDate[10]: logProb is -Inf.
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+warning: problem initializing stochastic node bDate[10]: logProb is -Inf.
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+warning: problem initializing stochastic node bDate[10]: logProb is -Inf.
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+[1] "done with:"
+[1] 3
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, logProb_z, z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 4
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, z, logProb_z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 5
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, z, logProb_z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 6
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, z, logProb_z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 2...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+running chain 3...
+|-------------|-------------|-------------|-------------|
+|-------------------------------------------------------|
+There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.
+[1] "done with:"
+[1] 7
+Defining model
+Building model
+Setting data and initial values
+Running calculate on model
+  [Note] Any error reports that follow may simply reflect missing values in model variables.
+Checking model sizes and dimensions
+  [Note] This model is not fully initialized. This is not an error.
+         To see which variables are not initialized, use model$initializeInfo().
+         For more information on model initialization, see help(modelInitialization).
+Checking model calculations
+NAs were detected in model variables: sbw, logProb_sbw, sd.yr, logProb_sd.yr, ranef.t, logProb_ranef.t, phi, mu1, z, logProb_z, mu2, logProb_y.
+Compiling
+  [Note] This may take a minute.
+  [Note] Use 'showCompilerOutput = TRUE' to see C++ compilation details.
+running chain 1...
+|-------------|-------------|-------------|-------------|
+|----------------------------------------

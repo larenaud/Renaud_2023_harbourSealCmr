@@ -1,0 +1,527 @@
+---
+title: "CMR Results"
+author: "Limoilou"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: cmr.bib
+csl: canadian-journal-of-zoology.csl
+fontsize: 12pt
+fontfamily: times
+---
+
+```{r setup, include=FALSE, cache = TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, verbose=FALSE)
+# knitr::opts_knit$set(root.dir = '~/Users/LimoilouARenaud/Documents/PostDocI/Projects/cmrSeal')
+```
+
+```{r include=FALSE}
+library(knitr)
+library(readxl)
+library(magrittr) # problems with tidyverse. Installed this instead
+library(dplyr)
+library(coda)
+library(bookdown)
+library(ggplot2)
+library(ggthemes)
+library(pander)
+library(cowplot)
+library(lubridate)
+library(boot)
+library(purrr)
+library(kableExtra)
+library(here)
+```
+
+
+# CMR results 
+
+
+```{r}
+#load(here("output.nosync/data/2022-12-09_resultsCMR.RData"))
+load(here("output.nosync/data/firstSubmission/2022-12-23_resultsCMR.RData"))
+
+```
+
+
+# revisions by Mike - annual trends in N or surv
+
+```{r}
+#  annual trend in abundance at BIC?
+summary(lm(N_bic.3_summa$Nsuper_mean~as.numeric(N_bic.3_summa$yr))) #NS
+# Coefficients:
+#                                Estimate Std. Error t value Pr(>|t|)    
+# (Intercept)                  -13925.355   2599.525  -5.357 0.000101 ***
+# as.numeric(N_bic.3_summa$yr)      6.993      1.294   5.402 9.33e-05 ***
+plot(N_bic.3_summa$Nsuper_mean~as.numeric(N_bic.3_summa$yr))
+
+confint(lm(N_bic.3_summa$Nsuper_mean~as.numeric(N_bic.3_summa$yr)))
+
+#  2.5 %       97.5 %
+# (Intercept)                  -19500.780690 -8349.928436
+# as.numeric(N_bic.3_summa$yr)      4.216104     9.768942
+
+
+# metis?
+summary(lm(N_metis.3_summa$Nsuper_mean~as.numeric(N_metis.3_summa$yr))) #NS
+
+# Coefficients:
+#                                  Estimate Std. Error t value Pr(>|t|)
+# (Intercept)                    -1947.6906  1282.8368  -1.518    0.151
+# as.numeric(N_metis.3_summa$yr)     0.9941     0.6388   1.556    0.142
+plot(N_metis.3_summa$Nsuper_mean~as.numeric(N_metis.3_summa$yr))
+
+confint(lm(N_metis.3_summa$Nsuper_mean~as.numeric(N_metis.3_summa$yr))) #
+# 2.5 %     97.5 %
+# (Intercept)                    -4699.1018212 803.720706
+# as.numeric(N_metis.3_summa$yr)    -0.3759855   2.364279
+```
+
+Temporal trends in survival 
+
+```{r}
+# at bic
+summary(lm(weanSurvOut_b_summa$weanSurv_med~as.numeric(weanSurvOut_b_summa$yr)))
+# as.numeric(weanSurvOut_b_summa$yr) -0.006659   0.010486  -0.635    0.536
+
+
+# at metis 
+
+summary(lm(weanSurvOut_m_summa$weanSurv_med~as.numeric(weanSurvOut_m_summa$yr)))
+# as.numeric(weanSurvOut_m_summa$yr) -0.023309   0.006335  -3.680  0.00248 **
+
+
+```
+
+# revisions by Mike - effect of capture effort on surv 
+
+```{r}
+
+# added 2022 11 11 by Mike - is interannual diff explained by capture effort?
+hist(weanSurvOut_b_summa$weanSurv_mean)
+hist(weanSurvOut_m_summa$weanSurv_mean)
+
+weanSurvOut_b_summa$effort <- effortB$effort
+weanSurvOut_m_summa$effort <- effortM$effort
+
+summary(lm(weanSurvOut_b_summa$weanSurv_mean~weanSurvOut_b_summa$effort))
+# weanSurvOut_b_summa$effort  0.03613    0.01391   2.597   0.0211 *
+m1=lm(weanSurvOut_b_summa$weanSurv_mean~weanSurvOut_b_summa$effort)
+qqnorm(resid(m1));qqline(resid(m1)) #
+summary(glm(weanSurvOut_b_summa$weanSurv_mean~weanSurvOut_b_summa$effort, family = 'binomial'))
+# weanSurvOut_b_summa$effort   0.1546     0.1411   1.096    0.273
+summary(lm(weanSurvOut_b_summa$weanSurv_med~weanSurvOut_b_summa$effort))
+# weanSurvOut_b_summa$effort  0.03734    0.01596   2.340   0.0346 *
+summary(glm(weanSurvOut_b_summa$weanSurv_med~weanSurvOut_b_summa$effort, family = 'binomial'))
+# weanSurvOut_b_summa$effort   0.1607     0.1421   1.131    0.258
+
+plot(weanSurvOut_b_summa$weanSurv_mean~weanSurvOut_b_summa$effort)
+plot(weanSurvOut_b_summa$weanSurv_med~weanSurvOut_b_summa$effort)
+
+summary(lm(weanSurvOut_m_summa$weanSurv_mean~weanSurvOut_m_summa$effort))
+# weanSurvOut_m_summa$effort  0.021645   0.008406   2.575    0.022 *
+summary(lm(weanSurvOut_m_summa$weanSurv_med~weanSurvOut_m_summa$effort))
+# weanSurvOut_m_summa$effort  0.02428    0.01003   2.422   0.0296 *
+    
+plot(weanSurvOut_m_summa$weanSurv_mean~weanSurvOut_m_summa$effort)
+plot(weanSurvOut_m_summa$weanSurv_med~weanSurvOut_m_summa$effort)
+
+m2=glm(weanSurvOut_m_summa$weanSurv_mean~weanSurvOut_m_summa$effort, family = binomial(link = 'logit'))
+# weanSurvOut_m_summa$effort   0.1332     0.1315   1.013   0.3111  
+
+
+# in abundance too?
+N_bic.3_summa$effort <- effortB$effort
+summary(lm(N_bic.3_summa$Nsuper_mean~N_bic.3_summa$effort)) #NS
+
+
+N_metis.3_summa$effort <- effortM$effort
+summary(lm(N_metis.3_summa$Nsuper_mean~N_metis.3_summa$effort)) #NS
+
+
+```
+
+## any effect of seals or environmental variables 
+
+Correlations between grey seal abundance and preweaning survival
+```{r}
+# combine grey seal abundance to df of surv
+totalAbundance_gs <- read.csv("~/Documents/PostDocI/Projects/cmrSeal/data/mine/ensembleTotalAbundance.csv")
+gulfAbundance_gs <- read.csv("~/Documents/PostDocI/Projects/cmrSeal/data/mine/ensembleGulfAbundance.csv")
+climate_PG <- read_excel("~/Documents/PostDocI/Projects/cmrSeal/data/mine/climate_PG.xlsx", sheet = "Feuil1")
+colnames(climate_PG) <- c('year', 'surf_anomaly', 'intermediate_anomaly')
+
+# add total abun bic
+tmp_bic <- merge(weanSurvOut_b_summa, totalAbundance_gs[, c('year','median')], by.x='yr', by.y='year') %>% rename(med_tot=median)
+
+# add gulf abun bic
+tmp2_bic <- merge(tmp_bic, gulfAbundance_gs[, c('year','median')], by.x='yr', by.y='year')%>% rename(med_gulf=median)
+
+tmp2_bic <- merge(tmp2_bic, climate_PG, by.x='yr', by.y='year') %>% filter(yr!=2002&yr!=2008)
+
+
+summary(lm(tmp2_bic$weanSurv_mean~tmp2_bic$med_tot)) #NS tmp2_bic$med_tot -0.0007804  0.0010866  -0.718   0.4863  
+ 
+summary(lm(tmp2_bic$weanSurv_mean~tmp2_bic$med_gulf)) # NS tmp2_bic$med_gulf -0.01028    0.01076  -0.956   0.3581  
+
+summary(lm(tmp2_bic$weanSurv_mean~tmp2_bic$surf_anomaly)) #NS
+summary(lm(tmp2_bic$weanSurv_mean~tmp2_bic$intermediate_anomaly)) #NS tmp2_bic$intermediate_anomaly  0.06746    0.07474   0.903    0.384    
+
+cor.test(tmp2_bic$weanSurv_mean,tmp2_bic$surf_anomaly, method='pearson') # 0.3895855 p-value = 0.1685
+cor.test(tmp2_bic$weanSurv_mean,tmp2_bic$intermediate_anomaly, method='pearson') # 0.2521395 p-value = .3845
+
+
+
+      
+# add total abun metis
+tmp_metis <- merge(weanSurvOut_m_summa, totalAbundance_gs[, c('year','median')], by.x='yr', by.y='year') %>% rename(med_tot=median)
+
+# add gulf abun metis
+tmp2_metis <- merge(tmp_metis, gulfAbundance_gs[, c('year','median')], by.x='yr', by.y='year')%>% rename(med_gulf=median)
+
+
+# metis
+summary(lm(weanSurvOut_m_summa$weanSurv_mean~weanSurvOut_m_summa$effort))
+
+
+
+```
+
+
+# export table S1
+
+```{r t1, echo=FALSE, verbose = FALSE}
+
+knitr::kable(s.sizes.b,caption = "Table S1", digits =2) %>% kable_styling()# %>%save_kable(here("tableS1_sampleSizes_bic.html"))
+knitr::kable(s.sizes.m,caption = "Table S1", digits =2) %>% kable_styling() #%>%save_kable(here("tableS1_sampleSizes_metis.html"))
+
+```
+
+# main results - abundance 
+```{r ts3}
+N_bic.3_summa <- N_bic.3_summa %>% mutate(across(where(is.numeric), round, 2))
+knitr::kable(N_bic.3_summa,caption = "Harbour seal pup abundance in the St. Lawrence Estuary, 1998-2019, at Bic Island, Québec, Canada. Estimates are from a model with a fixed effect of sampling occasions on intra-annual survival and detection probability. Mean posterior estimates, 25th and 75th quantiles, and 95% credible intervals around posterior means were extracted. Data were not available for years 2004-2007 and 2017-2018.", "simple")
+```
+
+
+```{r}
+N_metis.3_summa <- N_metis.3_summa %>% mutate(across(where(is.numeric), round, 2))
+knitr::kable(N_metis.3_summa,caption = "Harbour seal pup abundance in the St. Lawrence Estuary, 1998-2019, at Métis, Québec, Canada. Estimates are from a model with a fixed effect of sampling occasions on intra-annual survival and detection probability. Mean posterior estimates, 25th and 75th quantiles, and 95% credible intervals around posterior means were extracted. Data were not available for years 2004-2007 and 2017-2018.", "simple")
+```
+
+
+# main results - surv 
+```{r}
+weanSurvOut_b_summa <- weanSurvOut_b_summa %>% mutate(across(where(is.numeric), round, 2))
+knitr::kable(weanSurvOut_b_summa,caption = "Harbour seal pup pre-weaning survival in the St. Lawrence Estuary, 1998-2019, at Bic Island, Québec, Canada. Estimates are from a model with constant (mean) intra-annual survival and fixed time effects on detection probability. Mean posterior estimates, 25th and 75th quantiles, and 95% credible intervals around posterior means were extracted. Data were not available for years 2004-2007 and 2017-2018.") # %>%save_kable(here("tableS7_surv_bic.html"))
+```
+
+```{r}
+weanSurvOut_m_summa <- weanSurvOut_m_summa %>% mutate(across(where(is.numeric), round, 2))
+knitr::kable(weanSurvOut_m_summa,caption = "Harbour seal pup abundance in the St. Lawrence Estuary, 1998-2019, at Métis, Québec, Canada. Estimates are from a model with random time effects on intra-annual survival and fixed time effects on detection probability. Mean posterior estimates, 25th and 75th quantiles, and 95% credible intervals around posterior means were extracted. Data were not available for years 2004-2007 and 2017-2018.") # %>%save_kable(here("tableS7_surv_metis.html"))
+
+```
+
+
+These outputs can be compared - one includes medians, the other only means - otherwise outputs are equivalent.
+```{r abundance and survival}
+results_jollySeber <- results_jollySeber %>% mutate(across(where(is.numeric), round, 2))
+# results_weanSurv <- results_weanSurv %>% mutate(across(where(is.numeric), round, 2))
+
+
+
+
+# compare to gab's extract
+weanSurvOut_m <-  weanSurvOut_m%>% mutate(across(where(is.numeric), round, 2))
+weanSurvOut_m_summa <-  weanSurvOut_m_summa%>% mutate(across(where(is.numeric), round, 2))
+
+knitr::kable(weanSurvOut_m_summa,caption = "Table S1", digits =2) %>% kable_styling()# %>%save_kable(here("tableS1_sampleSizes_bic.html"))
+
+
+weanSurvOut_b <- weanSurvOut_b%>% mutate(across(where(is.numeric), round, 2))
+weanSurvOut_b_summa <-  weanSurvOut_b_summa%>% mutate(across(where(is.numeric), round, 2))
+
+knitr::kable(weanSurvOut_b_summa,caption = "Table S1", digits =2) %>% kable_styling()# %>%save_kable(here("tableS1_sampleSizes_bic.html"))
+
+
+# annual trend?
+summary(lm(weanSurv_mean~yr, data=weanSurvOut_m_summa)) # yes at METIS
+# yr          -0.015594   0.005975  -2.610   0.0206 *
+summary(lm(weanSurv_mean~as.numeric(yr), data=weanSurvOut_b_summa)) # no at BIC
+# as.numeric(yr) -0.006997   0.009975  -0.701    0.495
+```
+
+
+
+Get the birthdates but do not focus on that given high ci. 
+```{r}
+
+# birth date 
+sapply(outlist_b,function(x) x$summary$all.chains['mu.bd',]) 
+meanBd_bic <- sapply(outlist_b,function(x) x$summary$all.chains['mu.bd',]) %>% 
+    t() %>% as.data.frame() %>% rename(CIL=`95%CI_low`,CIH=`95%CI_upp`) %>% mutate(yr=years)
+
+sapply(outlist_m,function(x) x$summary$all.chains['mu.bd',]) 
+
+
+meanBd_metis <- sapply(outlist_m,function(x) x$summary$all.chains['mu.bd',]) %>% 
+  t() %>% as.data.frame() %>% rename(CIL=`95%CI_low`,CIH=`95%CI_upp`) %>% mutate(yr=years)
+
+# here the birth dates as estimated from the models
+meanBd_bic <-  meanBd_bic %>% mutate(across(where(is.numeric), round, 1))
+meanBd_metis <-  meanBd_metis %>% mutate(across(where(is.numeric), round, 1))
+```
+
+```{r}
+meanBd_bic
+meanBd_metis
+```
+
+# correlations between surv and n
+
+
+# attention years with low convergence can not be used. 
+
+
+```{r}
+correlation_bic<- lbda_bic.3 %>% filter(yr!=2002&yr!=2008) %>% group_by(it) %>% 
+    summarise(cor_sN=cor(weanSurv,Nsuper),
+              cor_sgrowth=cor(weanSurv,growth))
+correlation_Metis<- lbda_metis.3 %>% filter(yr!=2000&yr!=2001&yr!=2002&yr!=2013) %>% group_by(it) %>% 
+  summarise(cor_sN=cor(weanSurv,Nsuper),
+            cor_sgrowth=cor(weanSurv,growth))
+
+
+
+# median correlation between pre-weaning survival and pup abundance 
+quantile(correlation_bic$cor_sN,probs = c(0.025,.5,0.975))# -0.44395513  0.05559576  0.52749523 
+quantile(correlation_Metis$cor_sN,probs = c(0.025,.5,0.975)) # -0.6030714 -0.2743276  0.3713584 
+
+#  growth
+quantile(correlation_bic$cor_sgrowth,probs = c(0.025,.5,0.975)) #-0.592102299 -0.001278801  0.627859854 
+round(quantile(correlation_Metis$cor_sgrowth,probs = c(0.025,.5,0.975)),2) # -0.44  0.02  0.53
+
+
+hist(correlation_bic$cor_sN);abline(v=0,col='red')
+mean(correlation_bic$cor_sN>0)  # pseudo p-value  0.5113333 
+  
+hist(correlation_bic$cor_sgrowth);abline(v=0,col='red')
+mean(correlation_bic$cor_sgrowth>0)  # pseudo p-value 0.721
+
+hist(correlation_Metis$cor_sN);abline(v=0,col='red')
+mean(correlation_Metis$cor_sN>0)  # pseudo p-value 0.1086667
+
+hist(correlation_Metis$cor_sgrowth);abline(v=0,col='red')
+mean(correlation_Metis$cor_sgrowth>0)  # pseudo p-value = 0.696
+
+
+# mean growth
+mean(correlation_Metis$growth)
+
+```
+
+# get mean lambda 
+```{r}
+ t= lbda_bic.3 %>% group_by(yr) %>% filter(yr!=2008&yr!=2002) %>%
+    summarise(lbda_mean=mean(growth),
+              lbda_cil=as.numeric(quantile(growth,0.025)),
+              lbda_c25=as.numeric(quantile(growth,0.25)),
+              lbda_c75=as.numeric(quantile(growth,0.75)),
+              lbda_cih=as.numeric(quantile(growth,0.975))
+    )
+mean(t$lbda_mean) #1.189304
+quantile(t$lbda_mean, 0.025) #0.8371903 
+quantile(t$lbda_mean, 0.975) # 1.636451 
+
+tm=lbda_metis.3 %>% group_by(yr) %>% filter(yr!=2000&&yr!=2002&yr!=2013) %>% 
+    summarise(lbda_mean=mean(growth),
+              lbda_cil=as.numeric(quantile(growth,0.025)),
+              lbda_c25=as.numeric(quantile(growth,0.25)),
+              lbda_c75=as.numeric(quantile(growth,0.75)),
+              lbda_cih=as.numeric(quantile(growth,0.975))
+    )
+mean(tm$lbda_mean) # 1.090488
+quantile(tm$lbda_mean, 0.025) #0.4742506 
+quantile(tm$lbda_mean, 0.975) # 1.613211 
+ 
+
+
+survb=lbda_bic.3 %>% group_by(it) %>% filter(yr!=2008&yr!=2002) %>% 
+    summarise(meanSurv=mean(weanSurv))
+quantile(survb$meanSurv,probs = c(0.025,.5,0.975)) # 
+#      2.5%       50%     97.5% 
+# 0.4449693 0.5684772 0.6830830 
+mean(survb$meanSurv)     # 0.5681413
+
+
+survm=lbda_metis.3 %>% group_by(it) %>% filter(yr!=2000&yr!=2001&yr!=2002&yr!=2013) %>% 
+    summarise(meanSurv=mean(weanSurv))
+quantile(survm$meanSurv,probs = c(0.025,.5,0.975)) # 
+#      2.5%       50%     97.5% 
+# 0.1750356 0.2973254 0.4347385 
+     
+mean(survm$meanSurv)  # 0.2993452
+
+
+```
+
+```{r}
+
+```
+
+
+Finally, we investigated if pre-weaning survival was correlated either with pup abundance or the 'observed population growth rate', calculated as Nt+1/Nt, where N was pup abundance. Pre-weaning survival was not correlated with neither pup abundance at time t nor pup growth rate at Bic (median correlation with N [95% CRI]: `r  round(quantile(correlation_bic$cor_sN,probs = c(.5)), 2) ` [`r  round(quantile(correlation_bic$cor_sN,probs = c(.025)), 2) `, `r  round(quantile(correlation_bic$cor_sN,probs = c(.975)), 2) `], median correlation with growth rate [95% CRI]: `r  round(quantile(correlation_bic$cor_sgrowth,probs = c(.5)), 2) ` [`r  round(quantile(correlation_bic$cor_sgrowth,probs = c(.025)), 2) `, `r  round(quantile(correlation_bic$cor_sgrowth,probs = c(.975)), 2) `] or at Metis (median correlation with N [95% CRI]: `r  round(quantile(correlation_Metis$cor_sN,probs = c(.5)), 2) ` [`r  round(quantile(correlation_Metis$cor_sN,probs = c(.025)), 2) `, `r  round(quantile(correlation_Metis$cor_sN,probs = c(.975)), 2) `], median correlation with growth rate [95% CRI]: `r  round(quantile(correlation_Metis$cor_sgrowth,probs = c(.5)), 2) ` [`r  round(quantile(correlation_Metis$cor_sgrowth,probs = c(.025)), 2) `, `r  round(quantile(correlation_Metis$cor_sgrowth,probs = c(.975)), 2) `]. 
+
+
+
+# Tables and figures{-}
+
+Here figures are for model 3 in both cases but will have to check convergence issues first. 
+```{r}
+mytheme <- theme(plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"), legend.position = "none",
+                 axis.text=element_text(size=12, color="white"),
+                 axis.title=element_text(size=14, color="white"),
+                 axis.ticks.x =element_line(color="white"),
+                 axis.ticks.y = element_line(color="white"),
+                 rect = element_rect(fill = "white"),
+                 axis.line = element_line(color="white"),
+                 panel.grid.major = element_line(color="white"),
+                 panel.grid.minor = element_line(color="transparent"),
+                 panel.background = element_rect(fill = "transparent",colour = NA),
+                 plot.background = element_rect(fill = "transparent",colour = NA))
+background_grid(
+    major = c("xy", "x", "y", "only_minor", "none"),
+    minor = c("none", "xy", "x", "y"),
+    size.major = 0.5,
+    size.minor = 0.2,
+    color.major = "grey85",
+    color.minor = "grey85"
+)
+
+```
+# figure 1 - map of study area
+
+# figure 2 - abundance at low and high capture rates 
+
+```{r f3, echo=FALSE, fig.cap="Capture probability over time in harbour seal pups, Bic Island, Quebec, Canada, in a year with a) low sample size and recapture rate (2019, N = 56, recapture rate 0.05 and b) high sample size and recapture rate (year 1999, N=37, recapture rate = 0.81). full description of sample size per year appears in Table 1. ", fig.height=5, fig.width=7.165354}
+# cowplot::plot_grid(p_panel[[16]],p_panel[[2]], labels=c('a)','b)'))
+```
+
+# figure 3 - abundance over years 
+
+```{r f1, echo=FALSE, fig.cap="Harbour seal pup abundance in the St. Lawrence estuary, 1998-2019, at Bic Island and Métis, Québec, Canada. Estimates are from a model with a fixed effect of sampling occasions on intra-annual survival and detection probability. Bars represent 95% credible intervals around posterior mean. Data were not available for years 2004-2007 and 2017-2018.", fig.width=7.165354, fig.height=5}
+# results_jollySeber %>%
+#   ggplot(aes(x=yr, y=N, ymin=ymin, ymax=ymax, color=site)) +
+#   geom_pointrange(position=position_dodge(w=0.5), size=0.75) +
+#   labs(x=expression('Year')) +
+#   labs(y="Pup abundance") +
+#  # scale_y_continuous(limits = c(0,1),breaks = seq(from = 0, to = 1, by = 0.1)) +
+#   scale_x_continuous(breaks = seq(from = 1998, to = 2019, by = 2)) +
+#   #mytheme + background_grid()
+#   theme(panel.grid.minor = element_line(color="transparent"))+
+#   scale_colour_manual(values = c("bic" = "#FFDB6D", "metis" = "#00AFBB")) +
+#   theme_cowplot(12) +
+#   theme(panel.grid.major = element_line(color="lightgrey", linetype = 'dotted'))
+
+
+N_bic.3_summa$site <- 'bic'
+N_metis.3_summa$site <- 'metis'
+df_N <- rbind(N_bic.3_summa, N_metis.3_summa)
+knitr::kable(df_N,caption = "Table S5", digits =1) %>% kable_styling() # %>%  save_kable(here("tableS5_abundance.html"))
+
+df_N_na <- data.frame(yr=c(2004:2007, 2017:2018), Nsuper_mean=rep(NA,6), Nsuper_median= rep(NA,6), Nsuper_cil=rep(NA,6), Nsuper_c25=rep(NA,6),Nsuper_c75=rep(NA,6),Nsuper_cih=rep(NA,6), site=rep(c('bic', 'metis'), each=6))
+df_N=rbind(df_N,df_N_na)
+
+ggplot(df_N,aes(x=as.factor(yr), shape = as.factor(site)))+
+    geom_linerange(aes(ymin=Nsuper_cil,ymax=Nsuper_cih), position=position_dodge(w=0.75))+
+   # geom_linerange(aes(ymin=Nsuper_c25,ymax=Nsuper_c75),size=2, position=position_dodge(w=0.75), size=0.75)+
+    geom_point(aes(y=Nsuper_mean),size=4, position=position_dodge(w=0.75))+
+    labs(x='Year',y='Pup abundance')+
+  # theme(panel.grid.minor = element_line(color="transparent"))+
+  #scale_colour_manual(labels = c("Bic Island", "Métis"), values = c("bic" = "#FFDB6D", "metis" = "#00AFBB")) + 
+        scale_shape_manual(labels = c("Bic Island", "Métis"),values = c(21,19))+
+    theme_cowplot(10) +
+  theme(panel.grid.major = element_line(color="lightgrey", linetype = 'dotted'))+
+    guides(shape=guide_legend(title=NULL)) 
+
+
+ggsave("FIGS3_abundanceMedian_revised.png", width=8, height=4.5,unit='in', dpi = 600)
+
+```
+# figure 4 - survival over years 
+
+```{r f2, echo=FALSE, fig.cap="Pre-weaning survival of harbour seal in the St. Lawrence estuary, 1998-2019, at Bic Island and Métis, Québec, Canada. Estimates are from a model with a fixed effect of sampling occasions on intra-annual survival and detection probability. Bars represent 95% credible intervals around posterior mean. Data were not available for years 2004-2007 and 2017-2018. Two years did not converge: 2003 for Bic Island, and 2013 for Métis; the estimates are thus excluded from the figure.", fig.height=5, fig.width=7.165354}
+
+# THIS IS VERY CONSERVATIVE - I EXCLUDE 3 YEARS WITH CONVERGENCE PROBLEMS 
+
+# get means (june version)
+weanSurvOut_b_summa_filtered <- weanSurvOut_b_summa %>% filter(yr!=2008 & yr!=2002)
+mean(weanSurvOut_b_summa_filtered$weanSurv_mean) #  0.4613333
+quantile(weanSurvOut_b_summa_filtered$weanSurv_mean,probs = c(0.025,.5,0.975)) 
+#  2.5%    50%  97.5% 
+# 0.0235 0.4700 0.7730 
+
+weanSurvOut_m_summa_filtered <- weanSurvOut_m_summa %>% filter(yr!=2000&yr!=2002&yr!=2013)# this will need to change depending on final models 
+mean(weanSurvOut_m_summa_filtered$weanSurv_mean) #   0.2628571 much lower than before 
+quantile(weanSurvOut_m_summa_filtered$weanSurv_mean,probs = c(0.025,.5,0.975)) 
+# 2.5%   50% 97.5% 
+# 0.02975 0.22500 0.63775 
+
+# try wit this df 
+weanSurvOut_b_summa_filtered$site <- 'bic'
+weanSurvOut_m_summa_filtered$site <- 'metis'
+df_weanSurv <- rbind(weanSurvOut_b_summa_filtered, weanSurvOut_m_summa_filtered)
+# df_weanSurv <- df_weanSurv %>% filter(yr!=2003|site!='bic') %>% filter(yr!=2013|site!='metis')
+
+knitr::kable(df_weanSurv,caption = "Table S7", digits =1) %>% kable_styling() # %>% save_kable(here("tableS7_survival.html"))
+
+
+# figure 2022 09 09 now with median 
+ggplot(df_weanSurv,aes(x=as.factor(yr), shape = as.factor(site)))+
+    geom_linerange(aes(ymin=weanSurv_cil,ymax=weanSurv_cih), position=position_dodge(w=0.75), size=0.75)+
+  #  geom_linerange(aes(ymin=weanSurv_c25,ymax=weanSurv_c75),size=2, position=position_dodge(w=0.75), size=0.75)+
+    geom_point(aes(y=weanSurv_med), position=position_dodge(w=0.75), size=1)+
+    labs(x='Year',y='Pre-weaning survival')+
+    scale_y_continuous(limits = c(0,1),breaks = seq(from = 0, to = 1, by = 0.1)) +
+  theme(panel.grid.minor = element_line(color="transparent"))+
+  scale_colour_manual(labels = c("Bic Island", "Métis"),values = c("bic" = "#FFDB6D", "metis" = "#00AFBB")) + theme_cowplot(10) +
+  theme(panel.grid.major = element_line(color="lightgrey", linetype = 'dotted')) +
+    scale_shape_manual(labels = c("Bic Island", "Métis"),values = c(21,19)) 
+
+#ggsave("FIG4_survivalMedian_2022-12-09.png", width=8, height=4.5,unit='in', dpi = 600)
+
+```
+
+
+
+# additional analyses with survival
+```{r}
+
+```
+
+
+
+
+
+# supplementary tables and figures 
+
+## parturition date from CJS at bic 
+
+```{r echo=FALSE, verbose=FALSE}
+# reorganise a bit 
+colnames(meanBd_bic)
+# # meanBd_bic <- meanBd_bic[, c("yr" , "Mean","Median","St.Dev.", "CIL","CIH")]
+# names(meanBd_bic) <- c("Year" , "MeanDate","MedianDate","St.Dev.", "Lower CRI","Upper CRI")
+
+knitr::kable(meanBd_bic,caption = "Estimated parturition date of harbour seal pups, Bic Islanc, Quebec, Canada, 1998-2019. Parturition date was modeled as a function of body mass within a Cormack-Jolly-Seber model of pre-weaning survival. Each year was modeled independently and estimates are from a model with a fixed time effect on capture probability and a constant daily survival probability over time. No data were available for 2004-2007 and 2017-2018. CRI: 95% credibilibity interval.") # %>% save_kable('TABLES8_birthdates_bic.html')
+```
+## parturition date from CJS at metis 
+
+```{r echo=FALSE, verbose=FALSE}
+# reorganise a bit 
+colnames(meanBd_metis)
+# meanBd_metis <- meanBd_metis[, c("yr" , "Mean","Median","St.Dev.", "CIL","CIH")]
+# names(meanBd_metis) <- c("Year" , "Mean date","Median date","St.Dev.", "Lower CRI","Upper CRI")
+
+knitr::kable(meanBd_metis,caption = "Estimated parturition date of harbour seal pups, Metis, Quebec, Canada, 1998-2019. Parturition date was modeled as a function of body mass within a Cormack-Jolly-Seber model of pre-weaning survival. Each year was modeled independently and estimates are from a model with a fixed time effect on capture probability and a random time effect on daily survival probability. No data were available for 2004-2007 and 2017-2018. CRI: 95% credibilibity interval.") # %>% save_kable('TABLES8_birthdates_metis.html')
+```
+
+
